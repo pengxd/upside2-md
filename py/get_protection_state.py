@@ -17,12 +17,16 @@ def main():
     parser.add_argument('top_h5',     help='Input top file (.up or .h5 file)')
     parser.add_argument('input_h5',   help='Input simulation file')
     parser.add_argument('output_npy', help='Output npy file')
+
+    parser.add_argument("--presence-lipid", default=False, action='store_true', help='tell the script there are lipids in the simulation')
+
     parser.add_argument('--stride',   type=int, default=1, help='(default 1) Stride for reading file')
     parser.add_argument('--start',    type=int, default=0, help='(default 0) Initial frame')
     parser.add_argument('--residue',  type=str, default=None, help='(default none) the file used to store the residue id')
     parser.add_argument('--criterion1', type=float, default=0.01, help='(default 0.00) to judge whether NH is H-bonded. bigger than the criterion means H-bonded')
     parser.add_argument('--criterion2', type=float, default=0.05, help='(default 0.05) to judge whether NH is H-bonded by side chain aceptor. bigger than the criterion means H-bonded')
     parser.add_argument('--criterion3', type=float, default=5.00, help='(default 5.00) to judge whether NH is exposed. bigger than the criterion means buried')
+    parser.add_argument('--criterion4', type=float, default=0.50, help='(default 0.50) to judge whether NH is exposed to lipid. bigger than the criterion means yes')
     args = parser.parse_args()
 
     engine = ue.Upside(args.top_h5)
@@ -44,9 +48,12 @@ def main():
 
     print ("{} frames are used".format(N))
 
+    use_surf = args.presence_lipid 
+
     Hbond1 = []
     Hbond2 = []
     Burial = []
+    Surf   = []
     for i in range(N):
         p = engine.energy(traj_bb.xyz[i]*10)
 
@@ -72,6 +79,9 @@ def main():
                 bl3[ib] += weight2[aa] * burial_level2[ib*20+aa]
         Hbond2.append(bl3)
 
+        if use_surf:
+            surf = engine.get_output("surface")[:,0]
+            Surf.append(surf)
 
     Hbond1 = np.array(Hbond1)
     Hbond2 = np.array(Hbond2)
@@ -81,10 +91,16 @@ def main():
     HB1[Hbond1>args.criterion1] = 1.
     HB2 = Hbond2*0.
     HB2[Hbond2>args.criterion2] = 1.
-    BL = Burial*0.
+    BL  = Burial*0.
     BL[Burial>args.criterion3] = 1.
 
     PS = HB1 + HB2 + BL
+    if use_surf:
+        Surf   = np.array(Surf)
+        SF = Surf*0.
+        SF[Surf>args.criterion4] = 1.
+        PS += SF
+
     PS[PS>1.] = 1.
 
     np.save(args.output_npy, PS)
